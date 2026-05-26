@@ -1,5 +1,7 @@
 # 中文情感分析系统
 
+> 📚 参考来源：[https://gitee.com/Snake-Konginchrist/deep-learning-text-sentiment-analysis.git](https://gitee.com/Snake-Konginchrist/deep-learning-text-sentiment-analysis.git)
+
 基于深度学习的中文情感分析平台，支持多种模型架构。
 
 ## 📋 项目概览
