@@ -5,10 +5,26 @@
 """
 
 import re
-import jieba
-import nltk
 from typing import List, Union
-from transformers import AutoTokenizer
+
+# 尝试导入第三方库，如果失败则使用备用方案
+try:
+    import jieba
+    JIEBA_AVAILABLE = True
+except ImportError:
+    JIEBA_AVAILABLE = False
+
+try:
+    import nltk
+    NLTK_AVAILABLE = True
+except ImportError:
+    NLTK_AVAILABLE = False
+
+try:
+    from transformers import AutoTokenizer
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
 
 class TextProcessor:
     """
@@ -26,7 +42,7 @@ class TextProcessor:
         self.stopwords = self._load_stopwords()
         
         # 下载必要的NLTK数据（仅英文需要）
-        if language == "english":
+        if language == "english" and NLTK_AVAILABLE:
             try:
                 nltk.data.find('tokenizers/punkt')
                 nltk.data.find('corpora/stopwords')
@@ -49,24 +65,33 @@ class TextProcessor:
             }
         else:
             # 英文停用词
-            try:
-                from nltk.corpus import stopwords
-                stopwords = set(stopwords.words('english'))
-            except:
-                # 如果NLTK数据不可用，使用简化的停用词列表
-                stopwords = {
-                    'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves',
-                    'you', 'your', 'yours', 'yourself', 'he', 'him', 'his', 'himself',
-                    'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they',
-                    'them', 'their', 'theirs', 'themselves', 'what', 'which', 'who',
-                    'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are',
-                    'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
-                    'having', 'do', 'does', 'did', 'doing', 'a', 'an', 'the',
-                    'and', 'but', 'if', 'or', 'because', 'as', 'until', 'while',
-                    'of', 'at', 'by', 'for', 'with', 'through', 'during', 'before',
-                    'after', 'above', 'below', 'up', 'down', 'in', 'out', 'on', 'off'
-                }
+            if NLTK_AVAILABLE:
+                try:
+                    from nltk.corpus import stopwords
+                    stopwords = set(stopwords.words('english'))
+                except:
+                    # 如果NLTK数据不可用，使用简化的停用词列表
+                    stopwords = self._get_simple_english_stopwords()
+            else:
+                stopwords = self._get_simple_english_stopwords()
         return stopwords
+    
+    def _get_simple_english_stopwords(self) -> set:
+        """
+        获取简化的英文停用词列表
+        """
+        return {
+            'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves',
+            'you', 'your', 'yours', 'yourself', 'he', 'him', 'his', 'himself',
+            'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they',
+            'them', 'their', 'theirs', 'themselves', 'what', 'which', 'who',
+            'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are',
+            'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+            'having', 'do', 'does', 'did', 'doing', 'a', 'an', 'the',
+            'and', 'but', 'if', 'or', 'because', 'as', 'until', 'while',
+            'of', 'at', 'by', 'for', 'with', 'through', 'during', 'before',
+            'after', 'above', 'below', 'up', 'down', 'in', 'out', 'on', 'off'
+        }
     
     def clean_text(self, text: str) -> str:
         """
@@ -97,6 +122,44 @@ class TextProcessor:
         
         return text
     
+    def _simple_chinese_tokenize(self, text: str) -> List[str]:
+        """
+        简单的中文分词（当jieba不可用时使用）
+        参数：
+            text: 待分词的文本
+        返回值：分词结果列表
+        """
+        tokens = []
+        i = 0
+        while i < len(text):
+            if text[i].isspace():
+                i += 1
+                continue
+            
+            if '\u4e00' <= text[i] <= '\u9fff':
+                # 中文字符，按单个字符分词
+                tokens.append(text[i])
+                i += 1
+            elif text[i].isalpha():
+                # 英文字母，按单词分词
+                j = i
+                while j < len(text) and text[j].isalpha():
+                    j += 1
+                tokens.append(text[i:j])
+                i = j
+            elif text[i].isdigit():
+                # 数字，按数字序列分词
+                j = i
+                while j < len(text) and text[j].isdigit():
+                    j += 1
+                tokens.append(text[i:j])
+                i = j
+            else:
+                # 其他字符（标点等），跳过
+                i += 1
+        
+        return tokens
+    
     def tokenize(self, text: str, remove_stopwords: bool = True) -> List[str]:
         """
         对文本进行分词处理
@@ -113,8 +176,11 @@ class TextProcessor:
             return []
         
         if self.language == "chinese":
-            # 中文分词使用jieba
-            tokens = list(jieba.cut(text))
+            # 中文分词优先使用jieba，否则使用简单分词
+            if JIEBA_AVAILABLE:
+                tokens = list(jieba.cut(text))
+            else:
+                tokens = self._simple_chinese_tokenize(text)
         else:
             # 英文分词按空格分割并转小写
             tokens = text.lower().split()
@@ -138,7 +204,7 @@ class TextProcessor:
         if isinstance(texts, str):
             texts = [texts]
         
-        if model_type == "bert":
+        if model_type == "bert" and TRANSFORMERS_AVAILABLE:
             # BERT模型使用专门的tokenizer
             tokenizer = AutoTokenizer.from_pretrained(
                 "bert-base-chinese" if self.language == "chinese" else "bert-base-uncased"
@@ -162,4 +228,4 @@ class TextProcessor:
                 tokens = self.tokenize(text, remove_stopwords=True)
                 processed_texts.append(" ".join(tokens))
             
-            return processed_texts if len(processed_texts) > 1 else processed_texts[0] 
+            return processed_texts if len(processed_texts) > 1 else processed_texts[0]

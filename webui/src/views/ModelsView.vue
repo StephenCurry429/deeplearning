@@ -3,6 +3,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useSentimentStore } from '@/stores/sentiment'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import ApiService from '@/services/api'
 
 // 模型接口定义
 interface TrainedModel {
@@ -22,6 +23,16 @@ const sentimentStore = useSentimentStore()
 // 响应式数据
 const selectedModel = ref('')
 const modelSearchText = ref('')
+
+// 模型上传相关
+const showUploadModal = ref(false)
+const uploadFile = ref<File | null>(null)
+const selectedModelType = ref('bert')
+const selectedLanguage = ref('chinese')
+const isUploading = ref(false)
+
+// 支持的文件类型
+const supportedFileTypes = ['pth', 'pt', 'onnx']
 
 // 已训练模型数据（从后端API获取）
 const trainedModels = ref<TrainedModel[]>([])
@@ -263,6 +274,64 @@ const formatFileSize = (bytes: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
+// 处理文件选择
+const handleFileSelect = (event: any) => {
+  const file = event.target.files[0]
+  if (file) {
+    // 检查文件类型
+    const ext = file.name.split('.').pop()?.toLowerCase()
+    if (!supportedFileTypes.includes(ext || '')) {
+      ElMessage.error(`不支持的文件类型，支持: ${supportedFileTypes.join(', ')}`)
+      uploadFile.value = null
+      return
+    }
+    uploadFile.value = file
+  }
+}
+
+// 上传模型
+const handleUpload = async () => {
+  if (!uploadFile.value) {
+    ElMessage.warning('请选择要上传的模型文件')
+    return
+  }
+
+  isUploading.value = true
+
+  try {
+    const response = await ApiService.uploadModel(
+      uploadFile.value,
+      selectedModelType.value,
+      selectedLanguage.value
+    )
+
+    if (response.status === 'success') {
+      ElMessage.success(`模型上传成功: ${response.data?.filename}`)
+      showUploadModal.value = false
+      uploadFile.value = null
+      // 刷新模型列表
+      await loadModels()
+    } else {
+      ElMessage.error(response.message || '上传失败')
+    }
+  } catch (error) {
+    ElMessage.error('上传失败，请检查网络连接')
+  } finally {
+    isUploading.value = false
+  }
+}
+
+// 打开上传弹窗
+const openUploadModal = () => {
+  showUploadModal.value = true
+}
+
+// 关闭上传弹窗
+const closeUploadModal = () => {
+  showUploadModal.value = false
+  uploadFile.value = null
+}
+
 // 加载模型列表
 const loadModels = async () => {
   try {
@@ -369,6 +438,15 @@ onMounted(() => {
                     <el-icon><Search /></el-icon>
                   </template>
                 </el-input>
+                <el-button
+                  type="primary"
+                  size="small"
+                  style="margin-left: 12px;"
+                  @click="openUploadModal"
+                >
+                  <el-icon><Upload /></el-icon>
+                  上传模型
+                </el-button>
               </div>
             </div>
           </template>
@@ -571,6 +649,70 @@ onMounted(() => {
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 模型上传弹窗 -->
+    <el-dialog
+      v-model="showUploadModal"
+      title="上传模型"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="uploadForm" label-width="120px" class="upload-form">
+        <el-form-item label="选择文件">
+          <el-upload
+            class="upload-demo"
+            :action="''"
+            :auto-upload="false"
+            :on-change="handleFileSelect"
+            :file-list="uploadFile ? [{ name: uploadFile.name, size: uploadFile.size }] : []"
+            accept=".pth,.pt,.onnx"
+            :limit="1"
+          >
+            <el-button size="small" type="primary">
+              <el-icon><Plus /></el-icon>
+              选择模型文件
+            </el-button>
+          </el-upload>
+          <div v-if="uploadFile" class="file-info">
+            <el-tag type="info" size="small">
+              {{ uploadFile.name }} ({{ formatFileSize(uploadFile.size) }})
+            </el-tag>
+          </div>
+          <div class="file-tip">
+            <el-text type="info" size="small">
+              支持的格式: {{ supportedFileTypes.join(', ') }}，最大500MB
+            </el-text>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="模型类型">
+          <el-select v-model="selectedModelType" placeholder="请选择模型类型">
+            <el-option label="TextCNN" value="textcnn" />
+            <el-option label="BiLSTM" value="bilstm" />
+            <el-option label="BERT" value="bert" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="训练语言">
+          <el-select v-model="selectedLanguage" placeholder="请选择语言">
+            <el-option label="中文" value="chinese" />
+            <el-option label="English" value="english" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="closeUploadModal">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="isUploading"
+          :disabled="!uploadFile"
+          @click="handleUpload"
+        >
+          {{ isUploading ? '上传中...' : '上传' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -805,5 +947,26 @@ onMounted(() => {
     align-items: stretch;
     gap: 16px;
   }
+}
+
+/* 上传表单样式 */
+.upload-form {
+  padding: 10px 0;
+}
+
+.upload-form .el-form-item {
+  margin-bottom: 20px;
+}
+
+.file-info {
+  margin-top: 12px;
+}
+
+.file-tip {
+  margin-top: 8px;
+}
+
+.upload-demo {
+  display: inline-block;
 }
 </style>

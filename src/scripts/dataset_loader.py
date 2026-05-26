@@ -5,15 +5,59 @@
 """
 
 import os
+import sys
+import random
+import importlib
 import pandas as pd
 import requests
 import zipfile
 from pathlib import Path
 from typing import Tuple, Dict, Any, Optional
-from datasets import load_dataset, Dataset
-from sklearn.model_selection import train_test_split
 from ..utils.config import Config
 from ..utils.text_processor import TextProcessor
+
+def train_test_split(df, test_size=0.2, random_state=42, stratify=None):
+    """
+    简单的数据集划分函数，不依赖sklearn
+    """
+    random.seed(random_state)
+    
+    if stratify is not None:
+        # 分层抽样
+        unique_labels = df[stratify].unique()
+        train_indices = []
+        test_indices = []
+        
+        for label in unique_labels:
+            label_indices = df[df[stratify] == label].index.tolist()
+            random.shuffle(label_indices)
+            split_idx = int(len(label_indices) * (1 - test_size))
+            train_indices.extend(label_indices[:split_idx])
+            test_indices.extend(label_indices[split_idx:])
+        
+        random.shuffle(train_indices)
+        random.shuffle(test_indices)
+        
+        train_df = df.loc[train_indices].reset_index(drop=True)
+        test_df = df.loc[test_indices].reset_index(drop=True)
+    else:
+        # 随机抽样
+        indices = df.index.tolist()
+        random.shuffle(indices)
+        split_idx = int(len(indices) * (1 - test_size))
+        train_df = df.loc[indices[:split_idx]].reset_index(drop=True)
+        test_df = df.loc[indices[split_idx:]].reset_index(drop=True)
+    
+    return train_df, test_df
+
+# 使用importlib导入datasets库，避免与项目中的datasets目录冲突
+try:
+    datasets = importlib.import_module('datasets')
+    load_dataset = datasets.load_dataset
+    Dataset = datasets.Dataset
+except ImportError as e:
+    print(f"导入datasets库失败: {e}")
+    raise
 
 class DatasetLoader:
     """

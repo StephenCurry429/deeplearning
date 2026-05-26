@@ -233,6 +233,46 @@ export class ApiService {
     })
     return response.data
   }
+
+  /**
+   * 上传模型文件
+   */
+  static async uploadModel(file: File, modelType: string, language: string): Promise<ApiResponse<{
+    filename: string
+    model_type: string
+    language: string
+    file_size: number
+    file_path: string
+    auto_loaded: boolean
+  }>> {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('model_type', modelType)
+    formData.append('language', language)
+
+    const response = await apiClient.post('/models/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    return response.data
+  }
+
+  /**
+   * 转换模型格式
+   */
+  static async convertModel(modelPath: string, targetFormat: string): Promise<ApiResponse<{
+    original_path: string
+    onnx_path?: string
+    model_type: string
+    language: string
+  }>> {
+    const response = await apiClient.post('/models/convert', {
+      model_path: modelPath,
+      target_format: targetFormat
+    })
+    return response.data
+  }
 }
 
 export default ApiService

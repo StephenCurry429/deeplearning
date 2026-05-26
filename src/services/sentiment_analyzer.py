@@ -40,6 +40,10 @@ class SentimentAnalyzer:
         self.vocab = None
         self.tokenizer = None
         
+        # 演示模式（使用简单规则匹配）
+        self.demo_mode = False
+        self.sentiment_scores = None
+        
         # 情感标签映射
         self.label_map = {0: "负面", 1: "正面"}
         if language == "english":
@@ -69,6 +73,11 @@ class SentimentAnalyzer:
             self._load_bert_model(model_path)
         else:
             self._load_traditional_model(model_path)
+        
+        # 如果是演示模式，不需要加载实际模型
+        if self.demo_mode:
+            print("模型加载完成（演示模式）")
+            return
         
         # 移动到指定设备
         self.model.to(self.device)
@@ -105,6 +114,14 @@ class SentimentAnalyzer:
         # 加载checkpoint
         checkpoint = torch.load(model_path, map_location=self.device)
         
+        # 检查是否为演示模式
+        if 'demo_mode' in checkpoint and checkpoint['demo_mode']:
+            self.demo_mode = True
+            self.vocab = checkpoint.get('vocab', {})
+            self.sentiment_scores = checkpoint.get('sentiment_scores', {})
+            print("已加载演示模式模型")
+            return
+        
         # 获取词汇表
         if 'vocab' in checkpoint:
             self.vocab = checkpoint['vocab']
@@ -135,6 +152,10 @@ class SentimentAnalyzer:
         返回值：包含预测结果的字典
         使用场景：分析单条文本的情感倾向
         """
+        # 演示模式：使用简单规则匹配
+        if self.demo_mode:
+            return self._predict_demo_mode(text, return_proba)
+        
         if self.model is None:
             raise ValueError("请先加载模型")
         
@@ -174,6 +195,85 @@ class SentimentAnalyzer:
             result["probabilities"] = {
                 self.label_map[0]: round(probs[0][0].item(), 4),
                 self.label_map[1]: round(probs[0][1].item(), 4)
+            }
+        
+        return result
+    
+    def _predict_demo_mode(self, text: str, return_proba: bool = True) -> Dict[str, Union[str, float, Dict]]:
+        """
+        演示模式：使用简单规则匹配进行情感分析
+        """
+        # 分词
+        tokens = self.text_processor.tokenize(text)
+        
+        # 定义词汇（包含分词后可能出现的词）
+        positive_words = {'好', '棒', '很棒', '喜欢', '爱', '满意', '精彩', '优秀', '推荐', '支持', '赞', '完美', '开心', '高兴', '愉快', '惊喜', '感动', '期待', '不错', '给力', '值得', '太好了', '棒极了'}
+        negative_words = {'差', '很差', '太差', '糟糕', '讨厌', '失望', '垃圾', '恶心', '差评', '愤怒', '伤心', '难过', '失败', '烂', '坑', '骗', '不满意', '不喜欢'}
+        neutral_words = {'一般', '普通', '还行', '可以'}
+        negation_words = {'不', '没有', '无', '不是', '不会'}
+        intensifier_words = {'很', '非常', '太', '真的', '特别', '十分', '极其', '格外', '非常好', '非常棒'}
+        
+        # 计算情感分数
+        score = 0.0
+        negation_flag = False
+        intensifier_factor = 1.0
+        
+        for token in tokens:
+            # 检查是否是否定词
+            if token in negation_words:
+                negation_flag = not negation_flag
+                continue
+            
+            # 检查是否是程度词
+            if token in intensifier_words:
+                intensifier_factor = 1.5
+                continue
+            
+            # 检查是否是情感词
+            token_score = 0.0
+            if token in positive_words:
+                token_score = 1.0 * intensifier_factor
+            elif token in negative_words:
+                token_score = -1.0 * intensifier_factor
+            elif token in neutral_words:
+                token_score = 0.2  # 轻微正面倾向
+            
+            # 如果有否定标志，反转分数
+            if negation_flag:
+                token_score = -token_score
+            
+            score += token_score
+            intensifier_factor = 1.0  # 重置程度词因子
+        
+        # 计算置信度（基于分数绝对值）
+        abs_score = abs(score)
+        confidence = min(0.5 + abs_score * 0.3, 0.98)
+        
+        # 确定情感类别
+        predicted_class = 1 if score >= 0 else 0
+        
+        result = {
+            "text": text,
+            "sentiment": self.label_map[predicted_class],
+            "confidence": round(confidence, 4),
+            "predicted_class": predicted_class
+        }
+        
+        if return_proba:
+            # 计算概率分布
+            if score >= 0:
+                pos_prob = 0.5 + score * 0.3
+                neg_prob = 1 - pos_prob
+            else:
+                neg_prob = 0.5 + abs(score) * 0.3
+                pos_prob = 1 - neg_prob
+            
+            pos_prob = max(0.1, min(0.95, pos_prob))
+            neg_prob = max(0.1, min(0.95, neg_prob))
+            
+            result["probabilities"] = {
+                self.label_map[0]: round(neg_prob, 4),
+                self.label_map[1]: round(pos_prob, 4)
             }
         
         return result

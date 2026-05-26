@@ -1,9 +1,9 @@
 <!-- 模型训练页面 -->
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useSentimentStore } from '@/stores/sentiment'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Setting, Tools, MagicStick, VideoPlay, VideoPause, Monitor } from '@element-plus/icons-vue'
+import { Check, Setting, Tools, MagicStick, VideoPlay, VideoPause, Monitor, TrendingUp, BarChart3 } from '@element-plus/icons-vue'
 
 const sentimentStore = useSentimentStore()
 
@@ -18,6 +18,20 @@ const trainingForm = ref({
 
 const showAdvanced = ref(false)
 const trainingHistory = ref<any[]>([])
+
+// 训练指标数据
+const trainingMetrics = ref({
+  train_loss: [] as number[],
+  val_loss: [] as number[],
+  train_acc: [] as number[],
+  val_acc: [] as number[]
+})
+
+// 当前训练轮次
+const currentEpoch = ref(0)
+
+// 图表容器引用
+const chartContainer = ref<HTMLElement | null>(null)
 
 // 模型配置
 const modelConfigs = {
@@ -200,14 +214,321 @@ const getDatasetStatus = (language: string) => {
   }
 }
 
+// 监听训练状态变化，更新指标
+watch(
+  () => sentimentStore.trainingStatus,
+  (newStatus) => {
+    if (newStatus.results && newStatus.results.epoch) {
+      // 更新当前轮次
+      currentEpoch.value = newStatus.results.epoch
+
+      // 更新训练指标
+      if (newStatus.results.train_loss !== undefined) {
+        trainingMetrics.value.train_loss.push(newStatus.results.train_loss)
+      }
+      if (newStatus.results.val_loss !== undefined) {
+        trainingMetrics.value.val_loss.push(newStatus.results.val_loss)
+      }
+      if (newStatus.results.train_acc !== undefined) {
+        trainingMetrics.value.train_acc.push(newStatus.results.train_acc)
+      }
+      if (newStatus.results.val_acc !== undefined) {
+        trainingMetrics.value.val_acc.push(newStatus.results.val_acc)
+      }
+
+      // 更新图表
+      updateCharts()
+    }
+  },
+  { deep: true }
+)
+
+// 更新图表
+const updateCharts = () => {
+  nextTick(() => {
+    // 使用Canvas绘制简单图表
+    drawLossChart()
+    drawAccuracyChart()
+  })
+}
+
+// 绘制损失图表
+const drawLossChart = () => {
+  const canvas = document.getElementById('lossChart') as HTMLCanvasElement
+  if (!canvas) return
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const width = canvas.width
+  const height = canvas.height
+  const padding = 40
+
+  // 清空画布
+  ctx.clearRect(0, 0, width, height)
+
+  // 获取数据
+  const trainLoss = trainingMetrics.value.train_loss
+  const valLoss = trainingMetrics.value.val_loss
+
+  if (trainLoss.length === 0) return
+
+  // 计算范围
+  const allLosses = [...trainLoss, ...valLoss].filter((v) => v !== undefined)
+  const minLoss = Math.min(...allLosses) * 0.9
+  const maxLoss = Math.max(...allLosses) * 1.1
+  const rangeLoss = maxLoss - minLoss || 1
+
+  // 绘制网格
+  ctx.strokeStyle = '#eee'
+  ctx.lineWidth = 1
+  for (let i = 0; i <= 5; i++) {
+    const y = padding + (height - 2 * padding) * (i / 5)
+    ctx.beginPath()
+    ctx.moveTo(padding, y)
+    ctx.lineTo(width - padding, y)
+    ctx.stroke()
+
+    // 标注Y轴
+    const value = maxLoss - (rangeLoss * i) / 5
+    ctx.fillStyle = '#999'
+    ctx.font = '12px Arial'
+    ctx.textAlign = 'right'
+    ctx.fillText(value.toFixed(2), padding - 10, y + 4)
+  }
+
+  // 绘制X轴标注
+  ctx.fillStyle = '#999'
+  ctx.font = '12px Arial'
+  ctx.textAlign = 'center'
+  for (let i = 0; i < trainLoss.length; i++) {
+    const x = padding + ((width - 2 * padding) / (trainLoss.length - 1 || 1)) * i
+    ctx.fillText(`${i + 1}`, x, height - padding + 20)
+  }
+
+  // 绘制训练损失
+  if (trainLoss.length > 0) {
+    ctx.beginPath()
+    ctx.strokeStyle = '#409eff'
+    ctx.lineWidth = 2
+    ctx.moveTo(padding, height - padding - ((trainLoss[0] - minLoss) / rangeLoss) * (height - 2 * padding))
+
+    for (let i = 1; i < trainLoss.length; i++) {
+      const x = padding + ((width - 2 * padding) / (trainLoss.length - 1)) * i
+      const y = height - padding - ((trainLoss[i] - minLoss) / rangeLoss) * (height - 2 * padding)
+      ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+
+    // 绘制点
+    trainLoss.forEach((loss, i) => {
+      const x = padding + ((width - 2 * padding) / (trainLoss.length - 1)) * i
+      const y = height - padding - ((loss - minLoss) / rangeLoss) * (height - 2 * padding)
+      ctx.beginPath()
+      ctx.arc(x, y, 4, 0, Math.PI * 2)
+      ctx.fillStyle = '#409eff'
+      ctx.fill()
+    })
+  }
+
+  // 绘制验证损失
+  if (valLoss.length > 0) {
+    ctx.beginPath()
+    ctx.strokeStyle = '#f56c6c'
+    ctx.lineWidth = 2
+    ctx.setLineDash([5, 5])
+    ctx.moveTo(padding, height - padding - ((valLoss[0] - minLoss) / rangeLoss) * (height - 2 * padding))
+
+    for (let i = 1; i < valLoss.length; i++) {
+      const x = padding + ((width - 2 * padding) / (valLoss.length - 1)) * i
+      const y = height - padding - ((valLoss[i] - minLoss) / rangeLoss) * (height - 2 * padding)
+      ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    // 绘制点
+    valLoss.forEach((loss, i) => {
+      const x = padding + ((width - 2 * padding) / (valLoss.length - 1)) * i
+      const y = height - padding - ((loss - minLoss) / rangeLoss) * (height - 2 * padding)
+      ctx.beginPath()
+      ctx.arc(x, y, 4, 0, Math.PI * 2)
+      ctx.fillStyle = '#f56c6c'
+      ctx.fill()
+    })
+  }
+
+  // 绘制图例
+  ctx.fillStyle = '#409eff'
+  ctx.fillRect(width - padding - 100, 20, 15, 3)
+  ctx.fillStyle = '#666'
+  ctx.font = '12px Arial'
+  ctx.textAlign = 'left'
+  ctx.fillText('训练损失', width - padding - 80, 23)
+
+  ctx.fillStyle = '#f56c6c'
+  ctx.fillRect(width - padding - 100, 40, 15, 3)
+  ctx.setLineDash([5, 5])
+  ctx.strokeRect(width - padding - 100, 40, 15, 3)
+  ctx.setLineDash([])
+  ctx.fillText('验证损失', width - padding - 80, 43)
+}
+
+// 绘制准确率图表
+const drawAccuracyChart = () => {
+  const canvas = document.getElementById('accuracyChart') as HTMLCanvasElement
+  if (!canvas) return
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const width = canvas.width
+  const height = canvas.height
+  const padding = 40
+
+  // 清空画布
+  ctx.clearRect(0, 0, width, height)
+
+  // 获取数据
+  const trainAcc = trainingMetrics.value.train_acc
+  const valAcc = trainingMetrics.value.val_acc
+
+  if (trainAcc.length === 0) return
+
+  // 绘制网格
+  ctx.strokeStyle = '#eee'
+  ctx.lineWidth = 1
+  for (let i = 0; i <= 5; i++) {
+    const y = padding + (height - 2 * padding) * (i / 5)
+    ctx.beginPath()
+    ctx.moveTo(padding, y)
+    ctx.lineTo(width - padding, y)
+    ctx.stroke()
+
+    // 标注Y轴
+    const value = ((5 - i) / 5) * 100
+    ctx.fillStyle = '#999'
+    ctx.font = '12px Arial'
+    ctx.textAlign = 'right'
+    ctx.fillText(`${Math.round(value)}%`, padding - 10, y + 4)
+  }
+
+  // 绘制X轴标注
+  ctx.fillStyle = '#999'
+  ctx.font = '12px Arial'
+  ctx.textAlign = 'center'
+  for (let i = 0; i < trainAcc.length; i++) {
+    const x = padding + ((width - 2 * padding) / (trainAcc.length - 1 || 1)) * i
+    ctx.fillText(`${i + 1}`, x, height - padding + 20)
+  }
+
+  // 绘制训练准确率
+  if (trainAcc.length > 0) {
+    ctx.beginPath()
+    ctx.strokeStyle = '#67c23a'
+    ctx.lineWidth = 2
+    ctx.moveTo(padding, height - padding - (trainAcc[0] / 100) * (height - 2 * padding))
+
+    for (let i = 1; i < trainAcc.length; i++) {
+      const x = padding + ((width - 2 * padding) / (trainAcc.length - 1)) * i
+      const y = height - padding - (trainAcc[i] / 100) * (height - 2 * padding)
+      ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+
+    // 绘制点
+    trainAcc.forEach((acc, i) => {
+      const x = padding + ((width - 2 * padding) / (trainAcc.length - 1)) * i
+      const y = height - padding - (acc / 100) * (height - 2 * padding)
+      ctx.beginPath()
+      ctx.arc(x, y, 4, 0, Math.PI * 2)
+      ctx.fillStyle = '#67c23a'
+      ctx.fill()
+    })
+  }
+
+  // 绘制验证准确率
+  if (valAcc.length > 0) {
+    ctx.beginPath()
+    ctx.strokeStyle = '#e6a23c'
+    ctx.lineWidth = 2
+    ctx.setLineDash([5, 5])
+    ctx.moveTo(padding, height - padding - (valAcc[0] / 100) * (height - 2 * padding))
+
+    for (let i = 1; i < valAcc.length; i++) {
+      const x = padding + ((width - 2 * padding) / (valAcc.length - 1)) * i
+      const y = height - padding - (valAcc[i] / 100) * (height - 2 * padding)
+      ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    // 绘制点
+    valAcc.forEach((acc, i) => {
+      const x = padding + ((width - 2 * padding) / (valAcc.length - 1)) * i
+      const y = height - padding - (acc / 100) * (height - 2 * padding)
+      ctx.beginPath()
+      ctx.arc(x, y, 4, 0, Math.PI * 2)
+      ctx.fillStyle = '#e6a23c'
+      ctx.fill()
+    })
+  }
+
+  // 绘制图例
+  ctx.fillStyle = '#67c23a'
+  ctx.fillRect(width - padding - 100, 20, 15, 3)
+  ctx.fillStyle = '#666'
+  ctx.font = '12px Arial'
+  ctx.textAlign = 'left'
+  ctx.fillText('训练准确率', width - padding - 80, 23)
+
+  ctx.fillStyle = '#e6a23c'
+  ctx.fillRect(width - padding - 100, 40, 15, 3)
+  ctx.setLineDash([5, 5])
+  ctx.strokeRect(width - padding - 100, 40, 15, 3)
+  ctx.setLineDash([])
+  ctx.fillText('验证准确率', width - padding - 80, 43)
+}
+
+// 重置训练指标
+const resetMetrics = () => {
+  trainingMetrics.value = {
+    train_loss: [],
+    val_loss: [],
+    train_acc: [],
+    val_acc: []
+  }
+  currentEpoch.value = 0
+  nextTick(() => {
+    drawLossChart()
+    drawAccuracyChart()
+  })
+}
+
+// 监听开始训练，重置指标
+watch(
+  () => sentimentStore.isTraining,
+  (isTraining) => {
+    if (isTraining) {
+      resetMetrics()
+    }
+  }
+)
+
 onMounted(() => {
   // 获取数据集信息
   sentimentStore.fetchDatasetsInfo()
 
   // 获取训练状态
   if (sentimentStore.isTraining) {
-    // 开始轮询
+    resetMetrics()
   }
+
+  // 初始化空图表
+  nextTick(() => {
+    drawLossChart()
+    drawAccuracyChart()
+  })
 })
 </script>
 
@@ -375,6 +696,61 @@ onMounted(() => {
             </div>
             <div v-if="trainingError" class="error-text">
               错误: {{ trainingError }}
+            </div>
+          </div>
+
+          <!-- 训练可视化图表 -->
+          <div class="training-visualization">
+            <h4 class="visualization-header">
+              <el-icon><TrendingUp /></el-icon>
+              训练指标可视化
+            </h4>
+
+            <!-- 当前指标 -->
+            <div class="current-metrics">
+              <div class="metric-card">
+                <div class="metric-label">当前轮次</div>
+                <div class="metric-value">{{ currentEpoch }} / {{ trainingForm.epochs }}</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">训练损失</div>
+                <div class="metric-value loss">
+                  {{ trainingMetrics.train_loss.length > 0 
+                    ? trainingMetrics.train_loss[trainingMetrics.train_loss.length - 1].toFixed(4) 
+                    : '-' 
+                  }}
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">训练准确率</div>
+                <div class="metric-value accuracy">
+                  {{ trainingMetrics.train_acc.length > 0 
+                    ? `${trainingMetrics.train_acc[trainingMetrics.train_acc.length - 1].toFixed(1)}%` 
+                    : '-' 
+                  }}
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">验证准确率</div>
+                <div class="metric-value val-accuracy">
+                  {{ trainingMetrics.val_acc.length > 0 
+                    ? `${trainingMetrics.val_acc[trainingMetrics.val_acc.length - 1].toFixed(1)}%` 
+                    : '-' 
+                  }}
+                </div>
+              </div>
+            </div>
+
+            <!-- 损失图表 -->
+            <div class="chart-section">
+              <h5><el-icon><BarChart3 /></el-icon> 损失曲线</h5>
+              <canvas id="lossChart" width="600" height="250" class="training-chart"></canvas>
+            </div>
+
+            <!-- 准确率图表 -->
+            <div class="chart-section">
+              <h5><el-icon><TrendingUp /></el-icon> 准确率曲线</h5>
+              <canvas id="accuracyChart" width="600" height="250" class="training-chart"></canvas>
             </div>
           </div>
         </el-card>
@@ -660,6 +1036,89 @@ onMounted(() => {
   color: #f56c6c;
   font-size: 14px;
   margin-top: 8px;
+}
+
+/* 训练可视化样式 */
+.training-visualization {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #ebeef5;
+}
+
+.visualization-header {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.current-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.metric-card {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.metric-label {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+
+.metric-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.metric-value.loss {
+  color: #f56c6c;
+}
+
+.metric-value.accuracy {
+  color: #67c23a;
+}
+
+.metric-value.val-accuracy {
+  color: #e6a23c;
+}
+
+.chart-section {
+  margin-bottom: 24px;
+}
+
+.chart-section h5 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.training-chart {
+  width: 100%;
+  max-width: 600px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #ebeef5;
 }
 
 .current-status {

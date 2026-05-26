@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>情感分析系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --positive-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            --negative-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --neutral-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            --shadow-hover: 0 25px 70px rgba(0, 0, 0, 0.25);
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--primary-gradient);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 700px;
+            background: white;
+            border-radius: 24px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            animation: fadeInUp 0.6s ease-out;
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .header {
+            background: var(--primary-gradient);
+            padding: 35px 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            color: white;
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .header p {
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 15px;
+        }
+        
+        .main-content {
+            padding: 40px;
+        }
+        
+        .input-section {
+            margin-bottom: 30px;
+        }
+        
+        .input-section label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            font-size: 15px;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 160px;
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 16px;
+            font-size: 16px;
+            font-family: inherit;
+            resize: none;
+            transition: all 0.3s ease;
+            background: #fafafa;
+            line-height: 1.6;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            background: white;
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+        }
+        
+        textarea::placeholder {
+            color: #999;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 15px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 18px 30px;
+            border: none;
+            border-radius: 14px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        button.primary {
+            background: var(--primary-gradient);
+            color: white;
+        }
+        
+        button.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+        
+        button.secondary {
+            background: #f0f0f0;
+            color: #666;
+        }
+        
+        button.secondary:hover {
+            background: #e0e0e0;
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 30px;
+            display: none;
+        }
+        
+        .loading.active {
+            display: block;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f0f0f0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: #667eea;
+            font-weight: 500;
+        }
+        
+        .result {
+            margin-top: 30px;
+            padding: 30px;
+            border-radius: 20px;
+            display: none;
+            animation: slideIn 0.4s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .result.positive {
+            background: var(--positive-gradient);
+            display: block;
+        }
+        
+        .result.negative {
+            background: var(--negative-gradient);
+            display: block;
+        }
+        
+        .result.neutral {
+            background: var(--neutral-gradient);
+            display: block;
+        }
+        
+        .result-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .result-emoji {
+            font-size: 36px;
+        }
+        
+        .result-title {
+            color: white;
+            font-size: 24px;
+            font-weight: 700;
+        }
+        
+        .result-text {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 15px;
+            margin-bottom: 12px;
+            line-height: 1.6;
+        }
+        
+        .model-info {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 8px 16px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .model-label {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 13px;
+        }
+        
+        .model-value {
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.3);
+            padding: 4px 12px;
+            border-radius: 10px;
+        }
+        
+        .confidence-section {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        
+        .confidence-label {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .confidence-value {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .confidence-bar {
+            height: 10px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            background: white;
+            border-radius: 5px;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 30px;
+        }
+        
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-3px);
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .stat-label {
+            font-size: 13px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .api-info {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            font-size: 14px;
+            color: #666;
+            border-left: 4px solid #667eea;
+        }
+        
+        .model-upload-section {
+            margin-top: 25px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            border: 2px dashed #ddd;
+            transition: all 0.3s ease;
+        }
+        
+        .model-upload-section:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        
+        .upload-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .upload-header h3 {
+            font-size: 16px;
+            color: #333;
+            margin: 0;
+        }
+        
+        .model-format-hint {
+            font-size: 12px;
+            color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+        
+        .upload-label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            color: #667eea;
+            font-weight: 500;
+            font-size: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            border: 2px solid #e0e0e0;
+            transition: all 0.3s ease;
+        }
+        
+        .upload-label:hover {
+            border-color: #667eea;
+            background: #f8faff;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.15);
+        }
+        
+        .upload-icon {
+            font-size: 28px;
+        }
+        
+        .upload-text {
+            flex: 1;
+        }
+        
+        .upload-format {
+            font-size: 13px;
+            color: #999;
+            background: #f0f0f0;
+            padding: 4px 10px;
+            border-radius: 6px;
+        }
+        
+        .file-input {
+            display: none;
+        }
+        
+        .upload-status {
+            margin-top: 12px;
+            font-size: 14px;
+            color: #666;
+            min-height: 24px;
+            padding: 10px 15px;
+            background: white;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .upload-status.success {
+            color: #11998e;
+            border-left-color: #11998e;
+            background: #f0fff5;
+        }
+        
+        .upload-status.error {
+            color: #f5576c;
+            border-left-color: #f5576c;
+            background: #fff5f5;
+        }
+        
+        .model-select-section {
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        
+        .model-select-section label {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .model-select-section select {
+            flex: 1;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+        
+        .model-select-section select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .small-btn {
+            padding: 10px 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .small-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        .model-info-badge {
+            padding: 8px 14px;
+            background: #11998e;
+            color: white;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .model-info-badge.onnx {
+            background: #f5576c;
+        }
+        
+        .model-info-badge.pt {
+            background: #4facfe;
+        }
+        
+        .api-info code {
+            background: #e9ecef;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: 'Fira Code', monospace;
+            font-size: 13px;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 25px;
+            background: #f8f9fa;
+            color: #999;
+            font-size: 13px;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                border-radius: 16px;
+            }
+            
+            .header h1 {
+                font-size: 26px;
+            }
+            
+            .main-content {
+                padding: 25px;
+            }
+            
+            textarea {
+                height: 140px;
+                padding: 15px;
+            }
+            
+            .button-group {
+                flex-direction: column;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 情感分析系统</h1>
+            <p>基于深度学习的中文情感分析平台</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="input-section">
+                <label for="textInput">请输入要分析的文本</label>
+                <textarea id="textInput" placeholder="在这里输入您想要分析情感的文本..."></textarea>
+            </div>
+            
+            <div class="button-group">
+                <button class="primary" onclick="analyzeSentiment()" id="analyzeBtn">
+                    🚀 开始分析
+                </button>
+                <button class="secondary" onclick="clearInput()">
+                    🗑️ 清空
+                </button>
+            </div>
+            
+            <div class="model-upload-section">
+                <div class="upload-header">
+                    <h3>📁 模型管理</h3>
+                    <span class="model-format-hint">支持: .pt / .pth / .onnx</span>
+                </div>
+                <label class="upload-label">
+                    <input type="file" id="modelFile" accept=".pt,.pth,.onnx" class="file-input">
+                    <span class="upload-icon">📂</span>
+                    <span class="upload-text">点击或拖拽上传模型文件</span>
+                    <span class="upload-format">(.pt .pth .onnx)</span>
+                </label>
+                <div class="upload-status" id="uploadStatus"></div>
+            </div>
+            
+            <div class="model-select-section" id="modelSelectSection" style="display: none;">
+                <label for="modelSelect">📦 已加载模型：</label>
+                <select id="modelSelect" onchange="selectModel()">
+                    <option value="">请选择模型</option>
+                </select>
+                <div class="model-info-badge" id="modelInfoBadge">PTH</div>
+                <button class="small-btn" onclick="refreshModels()">🔄 刷新</button>
+            </div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div class="loading-text">正在分析中，请稍候...</div>
+            </div>
+            
+            <div class="result" id="result">
+                <div class="result-header">
+                    <span class="result-emoji" id="emoji">😊</span>
+                    <span class="result-title" id="sentiment">正面情感</span>
+                </div>
+                <div class="result-text" id="resultText">您的文本分析结果如下：</div>
+                <div class="model-info" id="modelInfo">
+                    <span class="model-label">使用模型：</span>
+                    <span class="model-value" id="modelType">TextCNN</span>
+                </div>
+                <div class="confidence-section">
+                    <div class="confidence-label">
+                        <span>置信度</span>
+                        <span class="confidence-value" id="confidence">95%</span>
+                    </div>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" id="confidenceBar"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value">3.7K</div>
+                    <div class="stat-label">词汇量</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">7.8K</div>
+                    <div class="stat-label">训练数据</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">92%</div>
+                    <div class="stat-label">准确率</div>
+                </div>
+            </div>
+            
+            <div class="api-info">
+                <strong>API接口:</strong> <code>POST /analyze</code>
+                <br>
+                <strong>请求格式:</strong> <code>{"text": "要分析的文本"}</code>
+            </div>
+        </div>
+        
+        <div class="footer">
+            基于 TextCNN 深度学习模型 | 支持中文情感分析
+        </div>
+    </div>
+    
+    <script>
+        async function analyzeSentiment() {
+            const text = document.getElementById('textInput').value.trim();
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            
+            if (!text) {
+                alert('请输入要分析的文本');
+                return;
+            }
+            
+            analyzeBtn.disabled = true;
+            loading.classList.add('active');
+            result.style.display = 'none';
+            
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
+                
+                const data = await response.json();
+                
+                updateResult(data);
+                
+            } catch (error) {
+                alert('分析失败: ' + error.message);
+            } finally {
+                analyzeBtn.disabled = false;
+                loading.classList.remove('active');
+            }
+        }
+        
+        function updateResult(data) {
+            const result = document.getElementById('result');
+            const emoji = document.getElementById('emoji');
+            const sentiment = document.getElementById('sentiment');
+            const resultText = document.getElementById('resultText');
+            const modelType = document.getElementById('modelType');
+            const confidence = document.getElementById('confidence');
+            const confidenceBar = document.getElementById('confidenceBar');
+            
+            // 设置情感类型
+            if (data.sentiment === '正面') {
+                result.className = 'result positive';
+                emoji.textContent = '😊';
+                sentiment.textContent = '正面情感';
+                resultText.textContent = '文本表达了积极正面的情感倾向';
+            } else {
+                result.className = 'result negative';
+                emoji.textContent = '😔';
+                sentiment.textContent = '负面情感';
+                resultText.textContent = '文本表达了消极负面的情感倾向';
+            }
+            
+            // 设置模型类型
+            if (data.model_type) {
+                modelType.textContent = data.model_type;
+            }
+            
+            // 设置置信度
+            confidence.textContent = data.confidence + '%';
+            confidenceBar.style.width = data.confidence + '%';
+            
+            result.style.display = 'block';
+            
+            // 滚动到结果区域
+            result.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        
+        function clearInput() {
+            document.getElementById('textInput').value = '';
+            document.getElementById('result').style.display = 'none';
+        }
+        
+        // 回车键触发分析
+        document.getElementById('textInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                analyzeSentiment();
+            }
+        });
+        
+        // 模型上传功能
+        document.getElementById('modelFile').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const uploadStatus = document.getElementById('uploadStatus');
+            uploadStatus.textContent = `正在上传: ${file.name}...`;
+            uploadStatus.className = 'upload-status';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/upload-model', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    uploadStatus.textContent = `✓ ${data.message}`;
+                    uploadStatus.className = 'upload-status success';
+                    await refreshModels();
+                } else {
+                    uploadStatus.textContent = `✗ ${data.error}`;
+                    uploadStatus.className = 'upload-status error';
+                }
+            } catch (error) {
+                uploadStatus.textContent = `✗ 上传失败: ${error.message}`;
+                uploadStatus.className = 'upload-status error';
+            }
+            
+            // 重置文件输入
+            e.target.value = '';
+        });
+        
+        // 刷新模型列表
+        async function refreshModels() {
+            try {
+                const response = await fetch('/models');
+                const data = await response.json();
+                
+                const modelSelect = document.getElementById('modelSelect');
+                const modelSelectSection = document.getElementById('modelSelectSection');
+                const modelInfoBadge = document.getElementById('modelInfoBadge');
+                
+                // 清空现有选项
+                modelSelect.innerHTML = '<option value="">请选择模型</option>';
+                
+                // 添加模型选项
+                data.models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.name;
+                    option.textContent = `${model.name} (${model.format.toUpperCase()})`;
+                    option.dataset.format = model.format;
+                    if (model.name === data.current_model) {
+                        option.selected = true;
+                    }
+                    modelSelect.appendChild(option);
+                });
+                
+                // 更新模型格式徽章
+                if (data.current_format) {
+                    modelInfoBadge.textContent = data.current_format.toUpperCase();
+                    modelInfoBadge.className = `model-info-badge ${data.current_format}`;
+                }
+                
+                // 显示模型选择区域
+                if (data.models.length > 0) {
+                    modelSelectSection.style.display = 'flex';
+                }
+            } catch (error) {
+                console.error('刷新模型列表失败:', error);
+            }
+        }
+        
+        // 选择模型
+        async function selectModel() {
+            const modelSelect = document.getElementById('modelSelect');
+            const modelName = modelSelect.value;
+            
+            if (!modelName) return;
+            
+            const uploadStatus = document.getElementById('uploadStatus');
+            uploadStatus.textContent = `正在加载模型: ${modelName}...`;
+            uploadStatus.className = 'upload-status';
+            
+            try {
+                const response = await fetch('/load-model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_name: modelName })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    uploadStatus.textContent = `✓ ${data.message}`;
+                    uploadStatus.className = 'upload-status success';
+                } else {
+                    uploadStatus.textContent = `✗ ${data.error}`;
+                    uploadStatus.className = 'upload-status error';
+                    // 恢复到之前的选择
+                    modelSelect.value = '';
+                }
+            } catch (error) {
+                uploadStatus.textContent = `✗ 加载失败: ${error.message}`;
+                uploadStatus.className = 'upload-status error';
+                modelSelect.value = '';
+            }
+        }
+        
+        // 页面加载时刷新模型列表
+        document.addEventListener('DOMContentLoaded', refreshModels);
+    </script>
+</body>
+</html>
